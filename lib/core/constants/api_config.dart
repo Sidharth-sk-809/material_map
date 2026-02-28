@@ -4,7 +4,7 @@
 class ApiConfig {
   // API Base URL - Update this based on your backend server
   // For development: Use your local machine IP for physical device
-  static const String API_URL = 'http://192.168.31.212:9000/api';  // Physical device (wired) - Flask on port 9000
+  static const String API_URL = 'https://material-map.onrender.com/api';  // Production - Hosted on Render
   
   // For  Android emulator, use: http://10.0.2.2:9000/api
   // For physical device, use: http://YOUR_MACHINE_IP:9000/api

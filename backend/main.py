@@ -31,8 +31,19 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 # Initialize database
 db = SQLAlchemy(app)
 
-# Enable CORS
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Enable CORS with comprehensive configuration
+CORS(app, 
+     resources={
+         r"/api/*": {
+             "origins": "*",
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"],
+             "supports_credentials": True,
+             "max_age": 3600
+         }
+     },
+     send_wildcard=True,
+     supports_credentials=True)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -171,6 +182,65 @@ def health_check():
 def health():
     return jsonify({'status': 'healthy'})
 
+@app.route('/api/status', methods=['GET'])
+def status():
+    """Backend status endpoint with database check"""
+    try:
+        # Try to query the database
+        user_count = User.query.count()
+        product_count = Product.query.count()
+        store_count = Store.query.count()
+        inventory_count = InventoryItem.query.count()
+        
+        return jsonify({
+            'status': 'healthy',
+            'message': 'Material Map API is operational',
+            'database_connected': True,
+            'database': 'supabase',
+            'api_version': '1.0.0',
+            'data_stats': {
+                'users': user_count,
+                'products': product_count,
+                'stores': store_count,
+                'inventory_items': inventory_count
+            },
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'API is running but database connection failed',
+            'database_connected': False,
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 503
+
+@app.route('/api/seed', methods=['POST'])
+def seed_database():
+    """Initialize database with demo data if empty"""
+    try:
+        # Check if database already has data
+        product_count = Product.query.count()
+        if product_count > 0:
+            return jsonify({
+                'message': 'Database already contains data',
+                'products_count': product_count
+            }), 409
+        
+        # Initialize database with demo data
+        print("Seeding database with demo data...")
+        init_db()
+        
+        return jsonify({
+            'message': 'Database seeded successfully',
+            'status': 'success'
+        }), 201
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error seeding database',
+            'error': str(e)
+        }), 500
+
 # ---- AUTHENTICATION ROUTES ----
 
 @app.route('/api/auth/register', methods=['POST'])
@@ -258,26 +328,44 @@ def logout():
 
 @app.route('/api/products', methods=['GET'])
 def get_all_products():
-    products = Product.query.all()
-    return jsonify([product_to_dict(p) for p in products])
+    try:
+        products = Product.query.all()
+        return jsonify([product_to_dict(p) for p in products])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching products',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/products/category/<category>', methods=['GET'])
 def get_by_category(category):
-    products = Product.query.filter_by(category=category).limit(30).all()
-    return jsonify([product_to_dict(p) for p in products])
+    try:
+        products = Product.query.filter_by(category=category).limit(30).all()
+        return jsonify([product_to_dict(p) for p in products])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching products by category',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/products/search', methods=['GET'])
 def search_products():
-    query = request.args.get('q', '').lower()
-    if not query:
-        return jsonify([])
-    
-    products = Product.query.filter(
-        (Product.name.ilike(f'%{query}%')) |
-        (Product.brand.ilike(f'%{query}%'))
-    ).limit(20).all()
-    
-    return jsonify([product_to_dict(p) for p in products])
+    try:
+        query = request.args.get('q', '').lower()
+        if not query:
+            return jsonify([])
+        
+        products = Product.query.filter(
+            (Product.name.ilike(f'%{query}%')) |
+            (Product.brand.ilike(f'%{query}%'))
+        ).limit(20).all()
+        
+        return jsonify([product_to_dict(p) for p in products])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error searching products',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/products/<product_id>', methods=['GET'])
 def get_product(product_id):
@@ -306,19 +394,37 @@ def create_product():
 
 @app.route('/api/stores', methods=['GET'])
 def get_all_stores():
-    stores = Store.query.all()
-    return jsonify([store_to_dict(s) for s in stores])
+    try:
+        stores = Store.query.all()
+        return jsonify([store_to_dict(s) for s in stores])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching stores',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/store-categories', methods=['GET'])
 def get_store_categories():
     """Get unique store categories"""
-    categories = db.session.query(Store.category).distinct().all()
-    return jsonify([cat[0] for cat in categories if cat[0]])
+    try:
+        categories = db.session.query(Store.category).distinct().all()
+        return jsonify([cat[0] for cat in categories if cat[0]])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching store categories',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/stores/category/<category>', methods=['GET'])
 def get_stores_by_category(category):
-    stores = Store.query.filter_by(category=category).all()
-    return jsonify([store_to_dict(s) for s in stores])
+    try:
+        stores = Store.query.filter_by(category=category).all()
+        return jsonify([store_to_dict(s) for s in stores])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching stores by category',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/stores/<store_id>', methods=['GET'])
 def get_store(store_id):
@@ -345,49 +451,73 @@ def create_store():
 
 @app.route('/api/stores/nearby', methods=['GET'])
 def get_nearby_stores():
-    import math
-    
-    lat = float(request.args.get('latitude', 0))
-    lon = float(request.args.get('longitude', 0))
-    radius = float(request.args.get('radius', 10))
-    
-    stores = Store.query.all()
-    nearby = []
-    
-    for store in stores:
-        if store.latitude and store.longitude:
-            lat1, lon1 = math.radians(lat), math.radians(lon)
-            lat2, lon2 = math.radians(store.latitude), math.radians(store.longitude)
-            
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            
-            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-            distance = 6371 * c
-            
-            if distance <= radius:
-                nearby.append(store)
-    
-    return jsonify([store_to_dict(s) for s in nearby])
+    try:
+        import math
+        
+        lat = float(request.args.get('latitude', 0))
+        lon = float(request.args.get('longitude', 0))
+        radius = float(request.args.get('radius', 10))
+        
+        stores = Store.query.all()
+        nearby = []
+        
+        for store in stores:
+            if store.latitude and store.longitude:
+                lat1, lon1 = math.radians(lat), math.radians(lon)
+                lat2, lon2 = math.radians(store.latitude), math.radians(store.longitude)
+                
+                dlat = lat2 - lat1
+                dlon = lon2 - lon1
+                
+                a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+                distance = 6371 * c
+                
+                if distance <= radius:
+                    nearby.append(store)
+        
+        return jsonify([store_to_dict(s) for s in nearby])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching nearby stores',
+            'error': str(e)
+        }), 500
 
 # ---- INVENTORY ROUTES ----
 
 @app.route('/api/inventory', methods=['GET'])
 def get_all_inventory():
-    items = InventoryItem.query.all()
-    return jsonify([inventory_to_dict(i) for i in items])
+    try:
+        items = InventoryItem.query.all()
+        return jsonify([inventory_to_dict(i) for i in items])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching inventory',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/inventory/product/<product_id>', methods=['GET'])
 def get_product_inventory(product_id):
-    items = InventoryItem.query.filter_by(product_id=product_id).all()
-    items.sort(key=lambda x: x.price)
-    return jsonify([inventory_to_dict(i, include_relations=True) for i in items])
+    try:
+        items = InventoryItem.query.filter_by(product_id=product_id).all()
+        items.sort(key=lambda x: x.price)
+        return jsonify([inventory_to_dict(i, include_relations=True) for i in items])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching product inventory',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/inventory/store/<store_id>', methods=['GET'])
 def get_store_inventory(store_id):
-    items = InventoryItem.query.filter_by(store_id=store_id).all()
-    return jsonify([inventory_to_dict(i) for i in items])
+    try:
+        items = InventoryItem.query.filter_by(store_id=store_id).all()
+        return jsonify([inventory_to_dict(i) for i in items])
+    except Exception as e:
+        return jsonify({
+            'detail': 'Error fetching store inventory',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/inventory/<item_id>', methods=['GET'])
 def get_inventory_item(item_id):
@@ -793,7 +923,15 @@ def init_db():
         print(f"   - {inventory_count} Inventory items (with varied prices)")
 
 if __name__ == '__main__':
-    # Skip database initialization since tables are already created in Supabase
+    # Create database tables if they don't exist
+    with app.app_context():
+        try:
+            db.create_all()
+            print("✅ Database tables initialized")
+        except Exception as e:
+            print(f"⚠️  Database table creation warning: {e}")
+    
+    # Skip full database initialization since tables are already created in Supabase
     # Uncomment below only if you need to recreate demo data
     # print("Initializing database...")
     # try:
