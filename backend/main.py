@@ -14,10 +14,22 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 
-# Configure database connection - convert postgresql:// to postgresql+psycopg:// for psycopg v3
+# Configure database connection - handle both local SQLite and Render PostgreSQL
 database_url = os.getenv('DATABASE_URL', 'sqlite:///material_map.db')
+
+# For Render environment, if DATABASE_URL is sqlite, it means it wasn't properly configured
+# Show a warning
+if database_url.startswith('sqlite://') and os.getenv('ENVIRONMENT') == 'production':
+    print("⚠️  WARNING: Using SQLite on Render. This will NOT persist data!")
+    print("⚠️  Please set DATABASE_URL in Render environment variables")
+    print("⚠️  See GET_SUPABASE_URL.md for instructions")
+
+# Convert postgresql:// to postgresql+psycopg:// for psycopg v3 compatibility
 if database_url and database_url.startswith('postgresql://'):
     database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+    print(f"✅ Using PostgreSQL connection")
+elif database_url.startswith('sqlite://'):
+    print(f"✅ Using SQLite database")
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -204,11 +216,15 @@ def status():
         store_count = Store.query.count()
         inventory_count = InventoryItem.query.count()
         
+        database_url = os.getenv('DATABASE_URL', 'sqlite:///material_map.db')
+        db_type = 'PostgreSQL' if 'postgresql' in database_url else 'SQLite'
+        
         return jsonify({
             'status': 'healthy',
             'message': 'Material Map API is operational',
             'database_connected': True,
-            'database': 'supabase',
+            'database_type': db_type,
+            'environment': os.getenv('ENVIRONMENT', 'development'),
             'api_version': '1.0.0',
             'data_stats': {
                 'users': user_count,
@@ -219,11 +235,17 @@ def status():
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
+        database_url = os.getenv('DATABASE_URL', 'sqlite:///material_map.db')
+        db_type = 'PostgreSQL' if 'postgresql' in database_url else 'SQLite'
+        
         return jsonify({
             'status': 'error',
             'message': 'API is running but database connection failed',
             'database_connected': False,
+            'database_type': db_type,
+            'environment': os.getenv('ENVIRONMENT', 'development'),
             'error': str(e),
+            'advice': 'If using Render, ensure DATABASE_URL is set in environment variables. See GET_SUPABASE_URL.md',
             'timestamp': datetime.utcnow().isoformat()
         }), 503
 
