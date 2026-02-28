@@ -314,15 +314,17 @@ def retry_operation(func, max_retries=3, delay=2):
 def reseed_database():
     """Clear database and reseed with fresh data"""
     try:
-        print("Clearing and reseeding database...")
+        print("Starting data reset...")
         
-        # Drop all tables
-        db.drop_all()
-        db.create_all()
+        # Simple approach: delete all records without dropping tables
+        db.session.query(InventoryItem).delete()
+        db.session.query(Product).delete()
+        db.session.query(Store).delete()
+        db.session.query(User).delete()
+        db.session.commit()
         print("✅ Database cleared")
         
-        # Call quick_seed logic
-        # Create 5 stores (one per category)
+        # Create 5 stores
         stores = [
             Store(id=generate_id(), name="Fresh Market", category="grocery", address="Market St", latitude=11.34, longitude=77.71),
             Store(id=generate_id(), name="Veggie Hub", category="vegetables", address="Farm Rd", latitude=11.35, longitude=77.72),
@@ -332,51 +334,40 @@ def reseed_database():
             Store(id=generate_id(), name="Electronics World", category="electronics", address="Tech St", latitude=11.32, longitude=77.69),
         ]
         db.session.add_all(stores)
-        db.session.commit()
+        db.session.flush()
         print(f"✅ Created {len(stores)} stores")
         
-        # Create 20 products across all categories
+        # Create 20 products
         products = [
-            # Grocery
             Product(id=generate_id(), name="Rice", brand="India Gate", category="grocery", unit="1kg", description="Premium rice"),
             Product(id=generate_id(), name="Oil", brand="Fortune", category="grocery", unit="1L"),
             Product(id=generate_id(), name="Flour", brand="Aashirvaad", category="grocery", unit="5kg"),
             Product(id=generate_id(), name="Sugar", brand="Uttam", category="grocery", unit="1kg"),
             Product(id=generate_id(), name="Salt", brand="Tata", category="grocery", unit="1kg"),
-            # Vegetables
             Product(id=generate_id(), name="Tomato", brand="Fresh", category="vegetables", unit="500g"),
             Product(id=generate_id(), name="Potato", brand="Farm", category="vegetables", unit="1kg"),
             Product(id=generate_id(), name="Onion", brand="Organic", category="vegetables", unit="1kg"),
             Product(id=generate_id(), name="Carrot", brand="Fresh", category="vegetables", unit="500g"),
-            # Stationery
             Product(id=generate_id(), name="Notebook", brand="ITC", category="stationery", unit="200pg"),
             Product(id=generate_id(), name="Pen", brand="Reynolds", category="stationery", unit="Pack of 5"),
             Product(id=generate_id(), name="Pencil", brand="Camlin", category="stationery", unit="Box of 12"),
             Product(id=generate_id(), name="Scissors", brand="Kangaro", category="stationery", unit="1pc"),
-            # Household
             Product(id=generate_id(), name="Soap", brand="Dettol", category="household", unit="100g"),
             Product(id=generate_id(), name="Cleaner", brand="Vim", category="household", unit="500ml"),
             Product(id=generate_id(), name="Detergent", brand="Omo", category="household", unit="1kg"),
             Product(id=generate_id(), name="Towels", brand="Scotch", category="household", unit="2 rolls"),
-            # Plumbing
             Product(id=generate_id(), name="Pipe", brand="Parryware", category="plumbing", unit="1 inch"),
             Product(id=generate_id(), name="Faucet", brand="Jaquar", category="plumbing", unit="1 pc"),
-            # Electronics
             Product(id=generate_id(), name="LED Bulb", brand="Philips", category="electronics", unit="9W"),
-            Product(id=generate_id(), name="Light Switch", brand="Havells", category="electronics", unit="1 pc"),
         ]
         db.session.add_all(products)
-        db.session.commit()
+        db.session.flush()
         print(f"✅ Created {len(products)} products")
         
         # Create inventory items
         inventory_items = []
         for product in products:
-            selected_stores = [s for s in stores if s.category == product.category or s.category == 'grocery'][:2]
-            if not selected_stores:
-                selected_stores = stores[:2]
-            
-            for i, store in enumerate(selected_stores):
+            for i, store in enumerate(stores[:2]):
                 price = 50 + (len(product.name) * 3) + (i * 10)
                 inventory = InventoryItem(
                     id=generate_id(),
@@ -400,7 +391,8 @@ def reseed_database():
         }), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Reseed failed: {str(e)}'}), 500
+        print(f"Error: {str(e)}")
+        return jsonify({'error': f'Reseed failed: {str(e)[:200]}'}), 500
 
 @app.route('/api/quick-seed', methods=['POST'])
 def quick_seed():
