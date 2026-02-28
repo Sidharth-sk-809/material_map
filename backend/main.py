@@ -249,6 +249,74 @@ def status():
             'timestamp': datetime.utcnow().isoformat()
         }), 503
 
+@app.route('/api/quick-seed', methods=['POST'])
+def quick_seed():
+    """Fast seed with minimal essential data (10+ products)"""
+    try:
+        product_count = Product.query.count()
+        if product_count > 0:
+            return jsonify({
+                'message': 'Database already contains data',
+                'products_count': product_count
+            }), 409
+        
+        print("Quick seeding database...")
+        
+        # Create 3 stores
+        stores = [
+            Store(id=generate_id(), name="Fresh Market", category="grocery", address="Market St", latitude=11.34, longitude=77.71),
+            Store(id=generate_id(), name="Office Supplies", category="stationery", address="School Rd", latitude=11.35, longitude=77.72),
+            Store(id=generate_id(), name="Home Mart", category="household", address="Main Ave", latitude=11.33, longitude=77.70),
+        ]
+        db.session.add_all(stores)
+        db.session.commit()
+        
+        # Create 15 essential products
+        products = [
+            Product(id=generate_id(), name="Rice", brand="India Gate", category="grocery", unit="1kg", description="Premium rice"),
+            Product(id=generate_id(), name="Oil", brand="Fortune", category="grocery", unit="1L"),
+            Product(id=generate_id(), name="Flour", brand="Aashirvaad", category="grocery", unit="5kg"),
+            Product(id=generate_id(), name="Tomato", brand="Fresh", category="grocery", unit="500g"),
+            Product(id=generate_id(), name="Potato", brand="Farm", category="grocery", unit="1kg"),
+            Product(id=generate_id(), name="Notebook", brand="ITC", category="stationery", unit="200pg"),
+            Product(id=generate_id(), name="Pen", brand="Reynolds", category="stationery", unit="Pack of 5"),
+            Product(id=generate_id(), name="Pencil", brand="Camlin", category="stationery", unit="Box of 12"),
+            Product(id=generate_id(), name="Soap", brand="Dettol", category="household", unit="100g"),
+            Product(id=generate_id(), name="Cleaner", brand="Vim", category="household", unit="500ml"),
+            Product(id=generate_id(), name="Detergent", brand="Omo", category="household", unit="1kg"),
+            Product(id=generate_id(), name="Sugar", brand="Uttam", category="grocery", unit="1kg"),
+            Product(id=generate_id(), name="Salt", brand="Tata", category="grocery", unit="1kg"),
+            Product(id=generate_id(), name="Scissors", brand="Kangaro", category="stationery", unit="1pc"),
+            Product(id=generate_id(), name="Towels", brand="Scotch", category="household", unit="2 rolls"),
+        ]
+        db.session.add_all(products)
+        db.session.commit()
+        
+        # Create inventory items (3-4 per product)
+        for product in products:
+            for i, store in enumerate(stores[:2]):
+                price = 50 + (len(product.name) * 3) + (i * 10)
+                inventory = InventoryItem(
+                    id=generate_id(),
+                    product_id=product.id,
+                    store_id=store.id,
+                    price=price,
+                    quantity=100 - i*20,
+                    discount_percentage=5 if i == 0 else 0
+                )
+                db.session.add(inventory)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Quick seed successful!',
+            'stores': len(stores),
+            'products': len(products),
+            'inventory_items': len(products) * 2
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/seed', methods=['POST'])
 def seed_database():
     """Initialize database with demo data if empty"""
