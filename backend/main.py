@@ -148,25 +148,9 @@ def decode_token(token):
     except:
         return None
 
-def product_to_dict(product):
-    # Get inventory items for this product with store and price info
-    inventory = InventoryItem.query.filter_by(product_id=product.id).all()
-    
-    # Build inventory list with store details
-    inventory_list = []
-    for item in inventory:
-        store = Store.query.get(item.store_id)
-        if store:
-            inventory_list.append({
-                'store_id': store.id,
-                'store_name': store.name,
-                'price': item.price,
-                'quantity': item.quantity,
-                'discount_percentage': item.discount_percentage,
-                'original_price': item.original_price
-            })
-    
-    return {
+def product_to_dict(product, include_inventory=False):
+    """Convert product to dict, optionally including inventory"""
+    data = {
         'id': product.id,
         'name': product.name,
         'brand': product.brand,
@@ -174,11 +158,33 @@ def product_to_dict(product):
         'image_url': product.image_url,
         'description': product.description,
         'unit': product.unit,
-        'created_at': product.created_at.isoformat(),
-        'inventory': inventory_list,
-        'min_price': min([i['price'] for i in inventory_list]) if inventory_list else None,
-        'max_price': max([i['price'] for i in inventory_list]) if inventory_list else None
+        'created_at': product.created_at.isoformat()
     }
+    
+    # Only load inventory if explicitly requested (avoid N+1 queries)
+    if include_inventory:
+        try:
+            inventory = InventoryItem.query.filter_by(product_id=product.id).all()
+            inventory_list = []
+            for item in inventory:
+                store = Store.query.get(item.store_id)
+                if store:
+                    inventory_list.append({
+                        'store_id': store.id,
+                        'store_name': store.name,
+                        'price': item.price,
+                        'quantity': item.quantity,
+                        'discount_percentage': item.discount_percentage,
+                        'original_price': item.original_price
+                    })
+            data['inventory'] = inventory_list
+            if inventory_list:
+                data['min_price'] = min([i['price'] for i in inventory_list])
+                data['max_price'] = max([i['price'] for i in inventory_list])
+        except:
+            data['inventory'] = []
+    
+    return data
 
 def store_to_dict(store):
     return {
@@ -499,7 +505,8 @@ def logout():
 def get_all_products():
     try:
         products = Product.query.all()
-        return jsonify([product_to_dict(p) for p in products])
+        # Include inventory data for all products
+        return jsonify([product_to_dict(p, include_inventory=True) for p in products])
     except Exception as e:
         return jsonify({
             'detail': 'Error fetching products',
@@ -546,7 +553,7 @@ def get_product_inventory(product_id):
 def get_by_category(category):
     try:
         products = Product.query.filter_by(category=category).limit(30).all()
-        return jsonify([product_to_dict(p) for p in products])
+        return jsonify([product_to_dict(p, include_inventory=True) for p in products])
     except Exception as e:
         return jsonify({
             'detail': 'Error fetching products by category',
@@ -565,7 +572,7 @@ def search_products():
             (Product.brand.ilike(f'%{query}%'))
         ).limit(20).all()
         
-        return jsonify([product_to_dict(p) for p in products])
+        return jsonify([product_to_dict(p, include_inventory=True) for p in products])
     except Exception as e:
         return jsonify({
             'detail': 'Error searching products',
@@ -577,7 +584,7 @@ def get_product(product_id):
     product = Product.query.get(product_id)
     if not product:
         return jsonify({'detail': 'Product not found'}), 404
-    return jsonify(product_to_dict(product))
+    return jsonify(product_to_dict(product, include_inventory=True))
 
 @app.route('/api/products', methods=['POST'])
 def create_product():
