@@ -161,28 +161,41 @@ def product_to_dict(product, include_inventory=False):
         'created_at': product.created_at.isoformat()
     }
     
-    # Only load inventory if explicitly requested (avoid N+1 queries)
-    if include_inventory:
-        try:
-            inventory = InventoryItem.query.filter_by(product_id=product.id).all()
-            inventory_list = []
-            for item in inventory:
-                store = Store.query.get(item.store_id)
+    # Always include inventory for now (will optimize later)
+    try:
+        inventory = db.session.query(InventoryItem).filter(
+            InventoryItem.product_id == product.id
+        ).all()
+        
+        inventory_list = []
+        for item in inventory:
+            try:
+                store = db.session.query(Store).filter(
+                    Store.id == item.store_id
+                ).first()
+                
                 if store:
                     inventory_list.append({
                         'store_id': store.id,
                         'store_name': store.name,
-                        'price': item.price,
+                        'price': float(item.price) if item.price else None,
                         'quantity': item.quantity,
                         'discount_percentage': item.discount_percentage,
-                        'original_price': item.original_price
+                        'original_price': float(item.original_price) if item.original_price else None
                     })
-            data['inventory'] = inventory_list
-            if inventory_list:
-                data['min_price'] = min([i['price'] for i in inventory_list])
-                data['max_price'] = max([i['price'] for i in inventory_list])
-        except:
-            data['inventory'] = []
+            except Exception as e:
+                print(f"Error loading inventory item: {str(e)}")
+                continue
+        
+        data['inventory'] = inventory_list
+        if inventory_list:
+            prices = [i['price'] for i in inventory_list if i['price']]
+            if prices:
+                data['min_price'] = min(prices)
+                data['max_price'] = max(prices)
+    except Exception as e:
+        print(f"Error loading inventory for product {product.id}: {str(e)}")
+        data['inventory'] = []
     
     return data
 
@@ -297,6 +310,98 @@ def retry_operation(func, max_retries=3, delay=2):
             time.sleep(delay)
             delay *= 2  # Exponential backoff
 
+@app.route('/api/reseed', methods=['POST'])
+def reseed_database():
+    """Clear database and reseed with fresh data"""
+    try:
+        print("Clearing and reseeding database...")
+        
+        # Drop all tables
+        db.drop_all()
+        db.create_all()
+        print("✅ Database cleared")
+        
+        # Call quick_seed logic
+        # Create 5 stores (one per category)
+        stores = [
+            Store(id=generate_id(), name="Fresh Market", category="grocery", address="Market St", latitude=11.34, longitude=77.71),
+            Store(id=generate_id(), name="Veggie Hub", category="vegetables", address="Farm Rd", latitude=11.35, longitude=77.72),
+            Store(id=generate_id(), name="Office Supplies", category="stationery", address="School Rd", latitude=11.36, longitude=77.73),
+            Store(id=generate_id(), name="Home Mart", category="household", address="Main Ave", latitude=11.33, longitude=77.70),
+            Store(id=generate_id(), name="Pipe Shop", category="plumbing", address="Industrial Rd", latitude=11.37, longitude=77.74),
+            Store(id=generate_id(), name="Electronics World", category="electronics", address="Tech St", latitude=11.32, longitude=77.69),
+        ]
+        db.session.add_all(stores)
+        db.session.commit()
+        print(f"✅ Created {len(stores)} stores")
+        
+        # Create 20 products across all categories
+        products = [
+            # Grocery
+            Product(id=generate_id(), name="Rice", brand="India Gate", category="grocery", unit="1kg", description="Premium rice"),
+            Product(id=generate_id(), name="Oil", brand="Fortune", category="grocery", unit="1L"),
+            Product(id=generate_id(), name="Flour", brand="Aashirvaad", category="grocery", unit="5kg"),
+            Product(id=generate_id(), name="Sugar", brand="Uttam", category="grocery", unit="1kg"),
+            Product(id=generate_id(), name="Salt", brand="Tata", category="grocery", unit="1kg"),
+            # Vegetables
+            Product(id=generate_id(), name="Tomato", brand="Fresh", category="vegetables", unit="500g"),
+            Product(id=generate_id(), name="Potato", brand="Farm", category="vegetables", unit="1kg"),
+            Product(id=generate_id(), name="Onion", brand="Organic", category="vegetables", unit="1kg"),
+            Product(id=generate_id(), name="Carrot", brand="Fresh", category="vegetables", unit="500g"),
+            # Stationery
+            Product(id=generate_id(), name="Notebook", brand="ITC", category="stationery", unit="200pg"),
+            Product(id=generate_id(), name="Pen", brand="Reynolds", category="stationery", unit="Pack of 5"),
+            Product(id=generate_id(), name="Pencil", brand="Camlin", category="stationery", unit="Box of 12"),
+            Product(id=generate_id(), name="Scissors", brand="Kangaro", category="stationery", unit="1pc"),
+            # Household
+            Product(id=generate_id(), name="Soap", brand="Dettol", category="household", unit="100g"),
+            Product(id=generate_id(), name="Cleaner", brand="Vim", category="household", unit="500ml"),
+            Product(id=generate_id(), name="Detergent", brand="Omo", category="household", unit="1kg"),
+            Product(id=generate_id(), name="Towels", brand="Scotch", category="household", unit="2 rolls"),
+            # Plumbing
+            Product(id=generate_id(), name="Pipe", brand="Parryware", category="plumbing", unit="1 inch"),
+            Product(id=generate_id(), name="Faucet", brand="Jaquar", category="plumbing", unit="1 pc"),
+            # Electronics
+            Product(id=generate_id(), name="LED Bulb", brand="Philips", category="electronics", unit="9W"),
+            Product(id=generate_id(), name="Light Switch", brand="Havells", category="electronics", unit="1 pc"),
+        ]
+        db.session.add_all(products)
+        db.session.commit()
+        print(f"✅ Created {len(products)} products")
+        
+        # Create inventory items
+        inventory_items = []
+        for product in products:
+            selected_stores = [s for s in stores if s.category == product.category or s.category == 'grocery'][:2]
+            if not selected_stores:
+                selected_stores = stores[:2]
+            
+            for i, store in enumerate(selected_stores):
+                price = 50 + (len(product.name) * 3) + (i * 10)
+                inventory = InventoryItem(
+                    id=generate_id(),
+                    product_id=product.id,
+                    store_id=store.id,
+                    price=price,
+                    quantity=100 - i*20,
+                    discount_percentage=5 if i == 0 else 0
+                )
+                inventory_items.append(inventory)
+        
+        db.session.add_all(inventory_items)
+        db.session.commit()
+        print(f"✅ Created {len(inventory_items)} inventory items")
+        
+        return jsonify({
+            'message': 'Database reseeded successfully! ✅',
+            'stores': len(stores),
+            'products': len(products),
+            'inventory_items': len(inventory_items)
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Reseed failed: {str(e)}'}), 500
+
 @app.route('/api/quick-seed', methods=['POST'])
 def quick_seed():
     """Fast seed with minimal essential data (10+ products)"""
@@ -317,42 +422,62 @@ def quick_seed():
         print("Quick seeding database...")
         
         try:
-            # Create 3 stores
+            # Create 5 stores (one per category)
             stores = [
                 Store(id=generate_id(), name="Fresh Market", category="grocery", address="Market St", latitude=11.34, longitude=77.71),
-                Store(id=generate_id(), name="Office Supplies", category="stationery", address="School Rd", latitude=11.35, longitude=77.72),
+                Store(id=generate_id(), name="Veggie Hub", category="vegetables", address="Farm Rd", latitude=11.35, longitude=77.72),
+                Store(id=generate_id(), name="Office Supplies", category="stationery", address="School Rd", latitude=11.36, longitude=77.73),
                 Store(id=generate_id(), name="Home Mart", category="household", address="Main Ave", latitude=11.33, longitude=77.70),
+                Store(id=generate_id(), name="Pipe Shop", category="plumbing", address="Industrial Rd", latitude=11.37, longitude=77.74),
+                Store(id=generate_id(), name="Electronics World", category="electronics", address="Tech St", latitude=11.32, longitude=77.69),
             ]
             db.session.add_all(stores)
             db.session.commit()
             print(f"✅ Created {len(stores)} stores")
             
-            # Create 15 essential products
+            # Create 20 products across all categories
             products = [
+                # Grocery
                 Product(id=generate_id(), name="Rice", brand="India Gate", category="grocery", unit="1kg", description="Premium rice"),
                 Product(id=generate_id(), name="Oil", brand="Fortune", category="grocery", unit="1L"),
                 Product(id=generate_id(), name="Flour", brand="Aashirvaad", category="grocery", unit="5kg"),
-                Product(id=generate_id(), name="Tomato", brand="Fresh", category="grocery", unit="500g"),
-                Product(id=generate_id(), name="Potato", brand="Farm", category="grocery", unit="1kg"),
+                Product(id=generate_id(), name="Sugar", brand="Uttam", category="grocery", unit="1kg"),
+                Product(id=generate_id(), name="Salt", brand="Tata", category="grocery", unit="1kg"),
+                # Vegetables
+                Product(id=generate_id(), name="Tomato", brand="Fresh", category="vegetables", unit="500g"),
+                Product(id=generate_id(), name="Potato", brand="Farm", category="vegetables", unit="1kg"),
+                Product(id=generate_id(), name="Onion", brand="Organic", category="vegetables", unit="1kg"),
+                Product(id=generate_id(), name="Carrot", brand="Fresh", category="vegetables", unit="500g"),
+                # Stationery
                 Product(id=generate_id(), name="Notebook", brand="ITC", category="stationery", unit="200pg"),
                 Product(id=generate_id(), name="Pen", brand="Reynolds", category="stationery", unit="Pack of 5"),
                 Product(id=generate_id(), name="Pencil", brand="Camlin", category="stationery", unit="Box of 12"),
+                Product(id=generate_id(), name="Scissors", brand="Kangaro", category="stationery", unit="1pc"),
+                # Household
                 Product(id=generate_id(), name="Soap", brand="Dettol", category="household", unit="100g"),
                 Product(id=generate_id(), name="Cleaner", brand="Vim", category="household", unit="500ml"),
                 Product(id=generate_id(), name="Detergent", brand="Omo", category="household", unit="1kg"),
-                Product(id=generate_id(), name="Sugar", brand="Uttam", category="grocery", unit="1kg"),
-                Product(id=generate_id(), name="Salt", brand="Tata", category="grocery", unit="1kg"),
-                Product(id=generate_id(), name="Scissors", brand="Kangaro", category="stationery", unit="1pc"),
                 Product(id=generate_id(), name="Towels", brand="Scotch", category="household", unit="2 rolls"),
+                # Plumbing
+                Product(id=generate_id(), name="Pipe", brand="Parryware", category="plumbing", unit="1 inch"),
+                Product(id=generate_id(), name="Faucet", brand="Jaquar", category="plumbing", unit="1 pc"),
+                # Electronics
+                Product(id=generate_id(), name="LED Bulb", brand="Philips", category="electronics", unit="9W"),
+                Product(id=generate_id(), name="Light Switch", brand="Havells", category="electronics", unit="1 pc"),
             ]
             db.session.add_all(products)
             db.session.commit()
             print(f"✅ Created {len(products)} products")
             
-            # Create inventory items (2 per product) - batch insert
+            # Create inventory items - 2 stores per product
             inventory_items = []
             for product in products:
-                for i, store in enumerate(stores[:2]):
+                # Select 2 stores that match or are general
+                selected_stores = [s for s in stores if s.category == product.category or s.category == 'grocery'][:2]
+                if not selected_stores:
+                    selected_stores = stores[:2]
+                
+                for i, store in enumerate(selected_stores):
                     price = 50 + (len(product.name) * 3) + (i * 10)
                     inventory = InventoryItem(
                         id=generate_id(),
