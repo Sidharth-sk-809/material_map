@@ -161,40 +161,47 @@ def product_to_dict(product, include_inventory=False):
         'created_at': product.created_at.isoformat()
     }
     
-    # Always include inventory for now (will optimize later)
-    try:
-        inventory = db.session.query(InventoryItem).filter(
-            InventoryItem.product_id == product.id
-        ).all()
-        
-        inventory_list = []
-        for item in inventory:
-            try:
-                store = db.session.query(Store).filter(
-                    Store.id == item.store_id
-                ).first()
-                
-                if store:
-                    inventory_list.append({
-                        'store_id': store.id,
-                        'store_name': store.name,
-                        'price': float(item.price) if item.price else None,
-                        'quantity': item.quantity,
-                        'discount_percentage': item.discount_percentage,
-                        'original_price': float(item.original_price) if item.original_price else None
-                    })
-            except Exception as e:
-                print(f"Error loading inventory item: {str(e)}")
-                continue
-        
-        data['inventory'] = inventory_list
-        if inventory_list:
-            prices = [i['price'] for i in inventory_list if i['price']]
-            if prices:
-                data['min_price'] = min(prices)
-                data['max_price'] = max(prices)
-    except Exception as e:
-        print(f"Error loading inventory for product {product.id}: {str(e)}")
+    # Only load inventory if explicitly requested to avoid N+1 queries
+    if include_inventory:
+        try:
+            # Use direct query to avoid relationship issues
+            items = db.session.execute(
+                db.text("SELECT * FROM inventory_item WHERE product_id = :product_id"),
+                {"product_id": product.id}
+            ).fetchall()
+            
+            inventory_list = []
+            for item in items:
+                try:
+                    store_result = db.session.execute(
+                        db.text("SELECT id, name FROM store WHERE id = :store_id"),
+                        {"store_id": item.store_id}
+                    ).fetchone()
+                    
+                    if store_result:
+                        inventory_list.append({
+                            'store_id': item.store_id,
+                            'store_name': store_result.name,
+                            'price': float(item.price) if item.price else None,
+                            'quantity': item.quantity,
+                            'discount_percentage': item.discount_percentage or 0,
+                            'original_price': float(item.original_price) if item.original_price else None
+                        })
+                except Exception as e:
+                    print(f"Error loading inventory item: {str(e)}")
+                    continue
+            
+            data['inventory'] = inventory_list
+            if inventory_list:
+                prices = [i['price'] for i in inventory_list if i['price']]
+                if prices:
+                    data['min_price'] = min(prices)
+                    data['max_price'] = max(prices)
+        except Exception as e:
+            print(f"Error loading inventory for product {product.id}: {str(e)}")
+            data['inventory'] = []
+    else:
+        # Don't load inventory by default - fast response
         data['inventory'] = []
     
     return data
@@ -622,8 +629,8 @@ def logout():
 def get_all_products():
     try:
         products = Product.query.all()
-        # Include inventory data for all products
-        return jsonify([product_to_dict(p, include_inventory=True) for p in products])
+        # Don't include inventory in list view - load separately if needed
+        return jsonify([product_to_dict(p, include_inventory=False) for p in products])
     except Exception as e:
         return jsonify({
             'detail': 'Error fetching products',
@@ -634,7 +641,7 @@ def get_all_products():
 def get_by_category(category):
     try:
         products = Product.query.filter_by(category=category).limit(30).all()
-        return jsonify([product_to_dict(p, include_inventory=True) for p in products])
+        return jsonify([product_to_dict(p, include_inventory=False) for p in products])
     except Exception as e:
         return jsonify({
             'detail': 'Error fetching products by category',
@@ -653,7 +660,7 @@ def search_products():
             (Product.brand.ilike(f'%{query}%'))
         ).limit(20).all()
         
-        return jsonify([product_to_dict(p, include_inventory=True) for p in products])
+        return jsonify([product_to_dict(p, include_inventory=False) for p in products])
     except Exception as e:
         return jsonify({
             'detail': 'Error searching products',
@@ -682,6 +689,41 @@ def create_product():
     db.session.add(product)
     db.session.commit()
     return jsonify(product_to_dict(product)), 201
+
+@app.route('/api/products/<product_id>/inventory', methods=['GET'])
+def get_product_prices(product_id):
+    """Get inventory/pricing for a specific product"""
+    try:
+        product = Product.query.get(product_id)
+        if not product:
+            return jsonify({'detail': 'Product not found'}), 404
+        
+        # Get inventory with store details
+        items = db.session.query(InventoryItem).filter(
+            InventoryItem.product_id == product_id
+        ).all()
+        
+        inventory_list = []
+        for item in items:
+            store = Store.query.get(item.store_id)
+            if store:
+                inventory_list.append({
+                    'store_id': store.id,
+                    'store_name': store.name,
+                    'address': store.address,
+                    'price': float(item.price) if item.price else None,
+                    'quantity': item.quantity,
+                    'discount_percentage': item.discount_percentage or 0,
+                    'original_price': float(item.original_price) if item.original_price else None
+                })
+        
+        return jsonify({
+            'product_id': product_id,
+            'product_name': product.name,
+            'stores': inventory_list
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ---- STORE ROUTES ----
 
