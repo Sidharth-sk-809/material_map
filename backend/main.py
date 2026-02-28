@@ -275,7 +275,13 @@ def retry_operation(func, max_retries=3, delay=2):
 def quick_seed():
     """Fast seed with minimal essential data (10+ products)"""
     try:
-        product_count = Product.query.count()
+        # Check if database already has data
+        try:
+            product_count = Product.query.count()
+        except:
+            db.session.rollback()
+            product_count = 0
+            
         if product_count > 0:
             return jsonify({
                 'message': 'Database already contains data',
@@ -284,7 +290,7 @@ def quick_seed():
         
         print("Quick seeding database...")
         
-        def seed_data():
+        try:
             # Create 3 stores
             stores = [
                 Store(id=generate_id(), name="Fresh Market", category="grocery", address="Market St", latitude=11.34, longitude=77.71),
@@ -293,6 +299,7 @@ def quick_seed():
             ]
             db.session.add_all(stores)
             db.session.commit()
+            print(f"✅ Created {len(stores)} stores")
             
             # Create 15 essential products
             products = [
@@ -314,8 +321,10 @@ def quick_seed():
             ]
             db.session.add_all(products)
             db.session.commit()
+            print(f"✅ Created {len(products)} products")
             
-            # Create inventory items (2 per product)
+            # Create inventory items (2 per product) - batch insert
+            inventory_items = []
             for product in products:
                 for i, store in enumerate(stores[:2]):
                     price = 50 + (len(product.name) * 3) + (i * 10)
@@ -327,28 +336,33 @@ def quick_seed():
                         quantity=100 - i*20,
                         discount_percentage=5 if i == 0 else 0
                     )
-                    db.session.add(inventory)
-            db.session.commit()
+                    inventory_items.append(inventory)
             
-            return {
+            # Batch insert inventory
+            db.session.add_all(inventory_items)
+            db.session.commit()
+            print(f"✅ Created {len(inventory_items)} inventory items")
+            
+            return jsonify({
+                'message': 'Quick seed successful! ✅',
                 'stores': len(stores),
                 'products': len(products),
-                'inventory_items': len(products) * 2
-            }
-        
-        # Retry the seeding operation
-        result = retry_operation(seed_data, max_retries=3, delay=2)
-        
-        return jsonify({
-            'message': 'Quick seed successful! ✅',
-            'stores': result['stores'],
-            'products': result['products'],
-            'inventory_items': result['inventory_items']
-        }), 201
+                'inventory_items': len(inventory_items)
+            }), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ Error during seeding: {str(e)}")
+            raise
+            
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Seeding failed: {str(e)}")
-        return jsonify({'error': 'Seeding failed', 'details': str(e)[:200]}), 500
+        error_msg = str(e)[:200]
+        print(f"❌ Seeding failed: {error_msg}")
+        return jsonify({
+            'error': 'Seeding failed',
+            'details': error_msg
+        }), 500
 
 @app.route('/api/seed', methods=['POST'])
 def seed_database():
