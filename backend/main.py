@@ -513,42 +513,6 @@ def get_all_products():
             'error': str(e)
         }), 500
 
-@app.route('/api/inventory/<product_id>', methods=['GET'])
-def get_product_inventory(product_id):
-    """Get inventory and stores for a specific product"""
-    try:
-        product = Product.query.get(product_id)
-        if not product:
-            return jsonify({'detail': 'Product not found'}), 404
-        
-        inventory = InventoryItem.query.filter_by(product_id=product_id).all()
-        stores_data = []
-        
-        for item in inventory:
-            store = Store.query.get(item.store_id)
-            if store:
-                stores_data.append({
-                    'store_id': store.id,
-                    'store_name': store.name,
-                    'store_category': store.category,
-                    'address': store.address,
-                    'latitude': store.latitude,
-                    'longitude': store.longitude,
-                    'price': item.price,
-                    'quantity': item.quantity,
-                    'discount_percentage': item.discount_percentage,
-                    'original_price': item.original_price
-                })
-        
-        return jsonify({
-            'product_id': product_id,
-            'product_name': product.name,
-            'brand': product.brand,
-            'stores': stores_data
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/products/category/<category>', methods=['GET'])
 def get_by_category(category):
     try:
