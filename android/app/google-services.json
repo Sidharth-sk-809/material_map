@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "835334231938",
+    "project_id": "materialmap-9be24",
+    "storage_bucket": "materialmap-9be24.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:835334231938:android:95da7b054b8fd42a0be19b",
+        "android_client_info": {
+          "package_name": "com.materialmap.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAb4q40mO3tH5mRHzTKwX-SrAkV0MIn1U4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:835334231938:android:31e0240c5c2afd450be19b",
+        "android_client_info": {
+          "package_name": "com.materialmap.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAb4q40mO3tH5mRHzTKwX-SrAkV0MIn1U4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
