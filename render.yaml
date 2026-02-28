@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: material-map
+    env: python314
+    plan: free
+    startCommand: bash start.sh
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: HOST
+        value: "0.0.0.0"

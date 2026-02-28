@@ -35,15 +35,27 @@ db = SQLAlchemy(app)
 CORS(app, 
      resources={
          r"/api/*": {
-             "origins": "*",
+             "origins": ["*"],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization"],
-             "supports_credentials": True,
              "max_age": 3600
-         }
-     },
-     send_wildcard=True,
-     supports_credentials=True)
+         },
+         r"/health": {"origins": ["*"]},
+         r"/": {"origins": ["*"]}
+     })
+
+# Initialize database tables on first request
+@app.before_request
+def init_db_tables():
+    """Initialize database tables if they don't exist"""
+    try:
+        # Only run once
+        if not hasattr(init_db_tables, 'executed'):
+            db.create_all()
+            init_db_tables.executed = True
+            print("✅ Database tables initialized")
+    except Exception as e:
+        print(f"⚠️  Database table warning: {e}")
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -923,23 +935,6 @@ def init_db():
         print(f"   - {inventory_count} Inventory items (with varied prices)")
 
 if __name__ == '__main__':
-    # Create database tables if they don't exist
-    with app.app_context():
-        try:
-            db.create_all()
-            print("✅ Database tables initialized")
-        except Exception as e:
-            print(f"⚠️  Database table creation warning: {e}")
-    
-    # Skip full database initialization since tables are already created in Supabase
-    # Uncomment below only if you need to recreate demo data
-    # print("Initializing database...")
-    # try:
-    #     init_db()
-    #     print("✅ Database initialized!")
-    # except Exception as e:
-    #     print(f"⚠️  Database init warning: {e}")
-    
     print(f"Starting Flask server on {os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT', 9000)}")
     app.run(
         host=os.getenv('HOST', '0.0.0.0'),
